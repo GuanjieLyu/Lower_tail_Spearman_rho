@@ -520,4 +520,3 @@ for (i in seq_len(nrow(case_keys))) {
   plot_case(dat_i, selector_i, theta_i, n_i, figure_dir)
 }
 
-
