@@ -21,8 +21,6 @@
 ##   to sequential execution. For parallel execution on Windows, run this
 ##   script through WSL.
 ##
-## Run:
-##   Rscript MISE_degree_selection.R
 
 options(stringsAsFactors = FALSE, warn = 1)
 
