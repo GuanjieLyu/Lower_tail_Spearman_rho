@@ -18,5 +18,5 @@ The simulations investigate three main questions:
 
 1. whether the smooth Bernstein bootstrap provides reliable pointwise confidence intervals and supports stable threshold selection;
 2. how the Bernstein estimator compares with the empirical copula-based estimator in terms of ISE, MISE, integrated squared bias, and integrated variance;
-3. whether the rule-of-thumb Bernstein degree \(m=\lfloor n^{2/3}\rfloor\) is reasonable in finite samples.
+3. whether the rule-of-thumb Bernstein degree used in the paper is reasonable in finite samples.
 
