@@ -21,13 +21,6 @@
 ##   to sequential execution. For parallel execution on Windows, run this
 ##   script through WSL.
 ##
-## Main outputs:
-##   - mise_degree_curve_summary.csv
-##   - mise_degree_rule_summary.csv
-##   - mise_degree_raw_ise.rds
-##   - mise_degree_curves.pdf
-##   - one family-by-sample-size degree-sensitivity PDF for each panel
-##
 ## Run:
 ##   Rscript MISE_degree_selection.R
 
@@ -542,12 +535,12 @@ draw_degree_panel <- function(curve_summary, family_name, n_value) {
 
   legend("topright",
          legend = c(dependence_label(family_name, dep_values),
-                    expression(scriptstyle(group(lfloor, n^{2/3}, rfloor)))),
+                    expression(group(lfloor, n^{2/3}, rfloor))),
          col = c(cols, "red"),
          lty = c(rep(1, length(dep_values)), 4),
          lwd = c(rep(3, length(dep_values)), 3),
          bty = "n",
-         cex = 1.1)
+         cex = 1.35)
 }
 
 plot_degree_panel <- function(curve_summary, family_name, n_value, figure_file) {
@@ -598,4 +591,3 @@ for (fam in family_values) {
     panel_figure_files <- c(panel_figure_files, figure_file)
   }
 }
-
