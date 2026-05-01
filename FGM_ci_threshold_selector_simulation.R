@@ -11,10 +11,7 @@
 ##   This script uses parallel::mclapply(), which relies on process forking.
 ##   It is intended for macOS, Linux, and WSL/Unix-like environments. It is
 ##   not suitable for native Windows R, where forking is unavailable.
-##
-## Run:
-##   Rscript fgm_ci_threshold_selector_simulation.R
-##
+
 
 options(stringsAsFactors = FALSE, warn = 1)
 
