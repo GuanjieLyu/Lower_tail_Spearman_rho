@@ -1,4 +1,4 @@
-# Bernstein Smoothing and Bootstrap Inference for Lower-Tail Spearman's Rho
+# Bernstein smoothing and bootstrap inference for lower-tail Spearman's rho function
 
 This repository contains the R code used to reproduce the simulation study for the paper:
 
