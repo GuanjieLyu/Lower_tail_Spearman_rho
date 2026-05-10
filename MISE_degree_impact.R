@@ -4,7 +4,8 @@
 ## lower-tail Spearman estimator to the polynomial degree m. For each
 ## copula family, dependence setting, and sample size, it estimates the
 ## MISE of the Bernstein estimator over a grid of m values and marks the
-## rule-of-thumb degree floor(n^(2/3)) in the resulting figures.
+## sensitivity degrees floor(0.75*n^(2/3)), floor(n^(2/3)), and
+## floor(1.25*n^(2/3)) in the resulting figures.
 ##
 ## The objective is to assess whether floor(n^(2/3)) is a reasonable
 ## practical choice for the Bernstein degree.
@@ -12,6 +13,7 @@
 ## Dependence settings:
 ##   - FGM:      theta in {-1, -0.5, 0, 0.5, 1}
 ##   - Gaussian: Kendall's tau in {-0.5, -0.25, 0, 0.25, 0.5}
+##   - Clayton:  Kendall's tau in {-0.5, -0.25, 0, 0.25, 0.5}
 ##   - Frank:    Kendall's tau in {-0.5, -0.25, 0, 0.25, 0.5}
 ##
 ## Parallel note:
@@ -20,7 +22,6 @@
 ##   native Windows R sessions, where the script automatically falls back
 ##   to sequential execution. For parallel execution on Windows, run this
 ##   script through WSL.
-##
 
 options(stringsAsFactors = FALSE, warn = 1)
 
@@ -28,7 +29,7 @@ options(stringsAsFactors = FALSE, warn = 1)
 ## Simulation settings
 ## -------------------------------------------------------------------------
 
-family_values <- c("FGM", "Gaussian", "Frank")
+family_values <- c("FGM", "Gaussian", "Clayton", "Frank")
 theta_values_fgm <- c(-1, -0.5, 0, 0.5, 1)
 tau_values <- c(-0.5, -0.25, 0, 0.25, 0.5)
 n_values <- c(50L, 200L)
@@ -103,6 +104,11 @@ frank_theta_from_tau <- function(tau) {
 
 gaussian_rho_from_tau <- function(tau) sin(pi * tau / 2)
 
+clayton_theta_from_tau <- function(tau) {
+  if (abs(tau) < 1e-12) return(0)
+  2 * tau / (1 - tau)
+}
+
 ## -------------------------------------------------------------------------
 ## Copula simulation
 ## -------------------------------------------------------------------------
@@ -145,11 +151,27 @@ rfrank_copula <- function(n, theta) {
   cbind(u = u, v = pmin(pmax(v, 0), 1))
 }
 
+rclayton_copula <- function(n, theta) {
+  if (abs(theta) < 1e-12) {
+    return(cbind(u = runif(n), v = runif(n)))
+  }
+
+  u <- runif(n)
+  w <- runif(n)
+  a <- (w * u^(theta + 1))^(-theta / (theta + 1))
+  v_power <- pmax(a - u^(-theta) + 1, .Machine$double.eps)
+  v <- v_power^(-1 / theta)
+
+  cbind(u = u, v = pmin(pmax(v, 0), 1))
+}
+
 r_copula_sample <- function(family, n, copula_parameter) {
   if (family == "FGM") {
     rfgm(n, copula_parameter)
   } else if (family == "Gaussian") {
     rgaussian_copula(n, copula_parameter)
+  } else if (family == "Clayton") {
+    rclayton_copula(n, copula_parameter)
   } else if (family == "Frank") {
     rfrank_copula(n, copula_parameter)
   } else {
@@ -208,8 +230,16 @@ truth_rho_halton <- function(family, copula_parameter, p_grid,
     exp_minus_theta_v <- pmax(1 + x, .Machine$double.eps)
     v <- -log(exp_minus_theta_v) / theta
     uv <- cbind(u = u, v = pmin(pmax(v, 0), 1))
+  } else if (family == "Clayton") {
+    theta <- copula_parameter
+    u <- h[, 1]
+    w <- h[, 2]
+    a <- (w * u^(theta + 1))^(-theta / (theta + 1))
+    v_power <- pmax(a - u^(-theta) + 1, .Machine$double.eps)
+    v <- v_power^(-1 / theta)
+    uv <- cbind(u = u, v = pmin(pmax(v, 0), 1))
   } else {
-    stop("Halton truth is only used for Gaussian and Frank copulas.")
+    stop("Halton truth is only used for Gaussian, Clayton, and Frank copulas.")
   }
 
   integral_values <- vapply(p_grid, function(p) {
@@ -296,6 +326,13 @@ gaussian_cases <- data.frame(
   copula_parameter = vapply(tau_values, gaussian_rho_from_tau, numeric(1))
 )
 
+clayton_cases <- data.frame(
+  family = "Clayton",
+  dependence_type = "kendall_tau",
+  dependence = tau_values,
+  copula_parameter = vapply(tau_values, clayton_theta_from_tau, numeric(1))
+)
+
 frank_cases <- data.frame(
   family = "Frank",
   dependence_type = "kendall_tau",
@@ -303,7 +340,7 @@ frank_cases <- data.frame(
   copula_parameter = vapply(tau_values, frank_theta_from_tau, numeric(1))
 )
 
-dependence_cases <- rbind(fgm_cases, gaussian_cases, frank_cases)
+dependence_cases <- rbind(fgm_cases, gaussian_cases, clayton_cases, frank_cases)
 dependence_cases$truth_id <- seq_len(nrow(dependence_cases))
 
 truth_rows <- vector("list", nrow(dependence_cases))
@@ -515,7 +552,9 @@ draw_degree_panel <- function(curve_summary, family_name, n_value) {
   cols <- c("#D55E00", "#0072B2", "#009E73", "#CC79A7", "#E69F00")
   cols <- cols[seq_along(dep_values)]
   y_max <- max(dat$mise_bernstein, na.rm = TRUE)
+  m_rule_lower <- floor(0.75 * n_value^(2 / 3))
   m_rule <- floor(n_value^(2 / 3))
+  m_rule_upper <- floor(1.25 * n_value^(2 / 3))
 
   plot(NA,
        xlim = range(m_grid),
@@ -529,16 +568,20 @@ draw_degree_panel <- function(curve_summary, family_name, n_value) {
     lines(dat_i$m, dat_i$mise_bernstein, col = cols[i], lwd = 3)
   }
 
+  abline(v = m_rule_lower, col = "red", lwd = 3, lty = 3)
   abline(v = m_rule, col = "red", lwd = 3, lty = 4)
+  abline(v = m_rule_upper, col = "red", lwd = 3, lty = 2)
 
   legend("topright",
          legend = c(dependence_label(family_name, dep_values),
-                    expression(group(lfloor, n^{2/3}, rfloor))),
-         col = c(cols, "red"),
-         lty = c(rep(1, length(dep_values)), 4),
-         lwd = c(rep(3, length(dep_values)), 3),
+                    expression(group(lfloor, 0.75*n^{2/3}, rfloor)),
+                    expression(group(lfloor, n^{2/3}, rfloor)),
+                    expression(group(lfloor, 1.25*n^{2/3}, rfloor))),
+         col = c(cols, "red", "red", "red"),
+         lty = c(rep(1, length(dep_values)), 3, 4, 2),
+         lwd = c(rep(3, length(dep_values)), 3, 3, 3),
          bty = "n",
-         cex = 1.35)
+         cex = 1.15)
 }
 
 plot_degree_panel <- function(curve_summary, family_name, n_value, figure_file) {
@@ -557,7 +600,7 @@ plot_degree_panel <- function(curve_summary, family_name, n_value, figure_file) 
 }
 
 plot_combined_degree_panels <- function(curve_summary, figure_file) {
-  pdf(figure_file, width = 14, height = 14, pointsize = 12, bg = "white")
+  pdf(figure_file, width = 14, height = 18, pointsize = 12, bg = "white")
   op <- par(mfrow = c(length(family_values), length(n_values)),
             mar = c(5.2, 5.8, 4.2, 1.4),
             mgp = c(3.3, 1.0, 0),
