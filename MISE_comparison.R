@@ -2,11 +2,13 @@
 ##
 ## This script compares the empirical-copula estimator and the
 ## Bernstein-smoothed estimator of the lower-tail Spearman curve
-## p -> rho(p). The simulation covers FGM, Gaussian, and Frank copulas.
+## p -> rho(p). The simulation covers FGM, Gaussian, Clayton, and Frank
+## copulas.
 ##
 ## Dependence settings:
 ##   - FGM:      theta in {-1, -0.5, 0, 0.5, 1}
 ##   - Gaussian: Kendall's tau in {-0.5, -0.25, 0, 0.25, 0.5}
+##   - Clayton:  Kendall's tau in {-0.5, -0.25, 0, 0.25, 0.5}
 ##   - Frank:    Kendall's tau in {-0.5, -0.25, 0, 0.25, 0.5}
 ##
 ## Parallel note:
@@ -15,9 +17,7 @@
 ##   native Windows R sessions, where the script automatically falls back
 ##   to sequential execution. For parallel execution on Windows, run this
 ##   script through WSL.
-##
-## Run:
-##   Rscript MISE_comparison.R
+
 
 options(stringsAsFactors = FALSE, warn = 1)
 
@@ -25,7 +25,7 @@ options(stringsAsFactors = FALSE, warn = 1)
 ## Simulation settings
 ## -------------------------------------------------------------------------
 
-family_values <- c("FGM", "Gaussian", "Frank")
+family_values <- c("FGM", "Gaussian", "Clayton", "Frank")
 theta_values_fgm <- c(-1, -0.5, 0, 0.5, 1)
 tau_values <- c(-0.5, -0.25, 0, 0.25, 0.5)
 n_values <- c(50L, 200L)
@@ -103,6 +103,11 @@ frank_theta_from_tau <- function(tau) {
 
 gaussian_rho_from_tau <- function(tau) sin(pi * tau / 2)
 
+clayton_theta_from_tau <- function(tau) {
+  if (abs(tau) < 1e-12) return(0)
+  2 * tau / (1 - tau)
+}
+
 ## -------------------------------------------------------------------------
 ## Copula simulation
 ## -------------------------------------------------------------------------
@@ -145,11 +150,27 @@ rfrank_copula <- function(n, theta) {
   cbind(u = u, v = pmin(pmax(v, 0), 1))
 }
 
+rclayton_copula <- function(n, theta) {
+  if (abs(theta) < 1e-12) {
+    return(cbind(u = runif(n), v = runif(n)))
+  }
+
+  u <- runif(n)
+  w <- runif(n)
+  a <- (w * u^(theta + 1))^(-theta / (theta + 1))
+  v_power <- pmax(a - u^(-theta) + 1, .Machine$double.eps)
+  v <- v_power^(-1 / theta)
+
+  cbind(u = u, v = pmin(pmax(v, 0), 1))
+}
+
 r_copula_sample <- function(family, n, copula_parameter) {
   if (family == "FGM") {
     rfgm(n, copula_parameter)
   } else if (family == "Gaussian") {
     rgaussian_copula(n, copula_parameter)
+  } else if (family == "Clayton") {
+    rclayton_copula(n, copula_parameter)
   } else if (family == "Frank") {
     rfrank_copula(n, copula_parameter)
   } else {
@@ -208,8 +229,16 @@ truth_rho_halton <- function(family, copula_parameter, p_grid,
     exp_minus_theta_v <- pmax(1 + x, .Machine$double.eps)
     v <- -log(exp_minus_theta_v) / theta
     uv <- cbind(u = u, v = pmin(pmax(v, 0), 1))
+  } else if (family == "Clayton") {
+    theta <- copula_parameter
+    u <- h[, 1]
+    w <- h[, 2]
+    a <- (w * u^(theta + 1))^(-theta / (theta + 1))
+    v_power <- pmax(a - u^(-theta) + 1, .Machine$double.eps)
+    v <- v_power^(-1 / theta)
+    uv <- cbind(u = u, v = pmin(pmax(v, 0), 1))
   } else {
-    stop("Halton truth is only used for Gaussian and Frank copulas.")
+    stop("Halton truth is only used for Gaussian, Clayton, and Frank copulas.")
   }
 
   integral_values <- vapply(p_grid, function(p) {
@@ -288,6 +317,13 @@ gaussian_cases <- data.frame(
   copula_parameter = vapply(tau_values, gaussian_rho_from_tau, numeric(1))
 )
 
+clayton_cases <- data.frame(
+  family = "Clayton",
+  dependence_type = "kendall_tau",
+  dependence = tau_values,
+  copula_parameter = vapply(tau_values, clayton_theta_from_tau, numeric(1))
+)
+
 frank_cases <- data.frame(
   family = "Frank",
   dependence_type = "kendall_tau",
@@ -295,7 +331,7 @@ frank_cases <- data.frame(
   copula_parameter = vapply(tau_values, frank_theta_from_tau, numeric(1))
 )
 
-dependence_cases <- rbind(fgm_cases, gaussian_cases, frank_cases)
+dependence_cases <- rbind(fgm_cases, gaussian_cases, clayton_cases, frank_cases)
 dependence_cases$truth_id <- seq_len(nrow(dependence_cases))
 
 truth_rows <- vector("list", nrow(dependence_cases))
@@ -325,7 +361,11 @@ for (i in seq_len(nrow(dependence_cases))) {
 truth_curves <- do.call(rbind, truth_rows)
 
 case_grid <- do.call(rbind, lapply(seq_len(nrow(dependence_cases)), function(i) {
-  cbind(dependence_cases[i, ], n = n_values)
+  data.frame(
+    dependence_cases[rep(i, length(n_values)), ],
+    n = n_values,
+    row.names = NULL
+  )
 }))
 case_grid$case_id <- seq_len(nrow(case_grid))
 
@@ -554,7 +594,7 @@ boxplot_panel_ylim <- function(box_values, cap_prob = 0.98) {
 }
 
 plot_mise_summary <- function(summary_results, figure_file) {
-  pdf(figure_file, width = 11, height = 8, pointsize = 12, bg = "white")
+  pdf(figure_file, width = 11, height = 11, pointsize = 12, bg = "white")
   op <- par(mfrow = c(length(family_values), length(n_values)),
             mar = c(4.8, 4.8, 3.2, 1),
             mgp = c(2.8, 0.85, 0),
@@ -664,7 +704,7 @@ plot_ise_boxplot <- function(ise_results, family_name, n_value, figure_file) {
 }
 
 plot_combined_boxplot <- function(ise_results, n_value, figure_file) {
-  pdf(figure_file, width = 18, height = 6.2, pointsize = 12, bg = "white")
+  pdf(figure_file, width = 22, height = 6.2, pointsize = 12, bg = "white")
   op <- par(mfrow = c(1, length(family_values)),
             mar = c(5.2, 5.8, 4.2, 1.4),
             mgp = c(3.3, 1.0, 0),
@@ -705,4 +745,3 @@ for (n_i in n_values) {
   plot_combined_boxplot(ise_results, n_i, file_i)
   combined_boxplot_files <- c(combined_boxplot_files, file_i)
 }
-
